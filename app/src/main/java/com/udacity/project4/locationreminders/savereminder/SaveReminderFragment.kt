@@ -3,10 +3,14 @@ package com.udacity.project4.locationreminders.savereminder
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.PendingIntent
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.location.LocationManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -18,6 +22,8 @@ import androidx.navigation.fragment.navArgs
 import com.google.android.gms.location.Geofence
 import com.google.android.gms.location.GeofencingRequest
 import com.google.android.gms.location.LocationServices
+import com.google.android.material.snackbar.Snackbar
+import com.udacity.project4.BuildConfig
 import com.udacity.project4.R
 import com.udacity.project4.base.BaseFragment
 import com.udacity.project4.base.NavigationCommand
@@ -91,7 +97,10 @@ class SaveReminderFragment : BaseFragment() {
             Manifest.permission.ACCESS_BACKGROUND_LOCATION
         ) == PackageManager.PERMISSION_GRANTED
 
-    private val requestForegroundPermissionLauncherForCreateGeofence = registerForActivityResult(ActivityResultContracts.RequestPermission()) { result ->
+    private fun isFineLocationGranted() =
+        ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+
+    private val requestLocationPermissionLauncherForCreateGeofence = registerForActivityResult(ActivityResultContracts.RequestPermission()) { result ->
         if (result) {
             lifecycleScope.launch { createGeofenceAndSaveReminder() }
         } else {
@@ -117,34 +126,49 @@ class SaveReminderFragment : BaseFragment() {
 
     @SuppressLint("MissingPermission")
     private suspend fun addGeofenceAndSaveReminder(reminder: ReminderDataItem) {
-        if (isBackgroundLocationPermissionGranted()) {
-            val geofence = Geofence.Builder()
-                .setRequestId(reminder.id)
-                .setCircularRegion(reminder.latitude ?: return, reminder.longitude ?: return, reminder.radius ?: return)
-                .setExpirationDuration(Geofence.NEVER_EXPIRE)
-                .setTransitionTypes(Geofence.GEOFENCE_TRANSITION_ENTER)
-                .build()
-            val request = GeofencingRequest.Builder()
-                .setInitialTrigger(GeofencingRequest.INITIAL_TRIGGER_ENTER)
-                .addGeofence(geofence)
-                .build()
-            wrapEspressoIdlingResource {
-                try {
-                    geofenceClient.addGeofences(request, geofencePendingIntent).await()
-                } catch (e: Exception) {
-                    Timber.e(e)
-                    _viewModel.showSnackBarInt.postValue(R.string.error_adding_geofence)
-                    return
-                }
+        if (isFineLocationGranted()) {
+            if (isBackgroundLocationPermissionGranted()) {
+                val locationManager = requireContext().getSystemService(Context.LOCATION_SERVICE) as LocationManager
+                if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER) && locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
+                    val geofence = Geofence.Builder()
+                        .setRequestId(reminder.id)
+                        .setCircularRegion(reminder.latitude ?: return, reminder.longitude ?: return, reminder.radius ?: return)
+                        .setExpirationDuration(Geofence.NEVER_EXPIRE)
+                        .setTransitionTypes(Geofence.GEOFENCE_TRANSITION_ENTER)
+                        .build()
+                    val request = GeofencingRequest.Builder()
+                        .setInitialTrigger(GeofencingRequest.INITIAL_TRIGGER_ENTER)
+                        .addGeofence(geofence)
+                        .build()
+                    wrapEspressoIdlingResource {
+                        try {
+                            geofenceClient.addGeofences(request, geofencePendingIntent).await()
+                        } catch (e: Exception) {
+                            Timber.e(e)
+                            _viewModel.showSnackBarInt.postValue(R.string.error_adding_geofence)
+                            return
+                        }
 
-                _viewModel.saveReminder(reminder)
+                        _viewModel.saveReminder(reminder)
+                    }
+                } else {
+                    Snackbar.make(requireView(), R.string.location_required_error, Snackbar.LENGTH_INDEFINITE)
+                        .setAction(R.string.settings) {
+                            startActivity(Intent().apply {
+                                action = Settings.ACTION_LOCATION_SOURCE_SETTINGS
+                                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                            })
+                        }.show()
+                }
+            } else {
+                requestLocationPermissionLauncherForCreateGeofence.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
             }
         } else {
-            requestForegroundPermissionLauncherForCreateGeofence.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+            requestLocationPermissionLauncherForCreateGeofence.launch(Manifest.permission.ACCESS_FINE_LOCATION)
         }
     }
 
-    private val requestForegroundPermissionLauncherForRemoveGeofence = registerForActivityResult(ActivityResultContracts.RequestPermission()) { result ->
+    private val requestLocationPermissionLauncherForRemoveGeofence = registerForActivityResult(ActivityResultContracts.RequestPermission()) { result ->
         if (result) {
             lifecycleScope.launch { removeGeofenceAndReminder() }
         } else {
@@ -153,18 +177,22 @@ class SaveReminderFragment : BaseFragment() {
     }
 
     private suspend fun removeGeofenceAndReminder() {
-        if (isBackgroundLocationPermissionGranted()) {
-            wrapEspressoIdlingResource {
-                try {
-                    geofenceClient.removeGeofences(mutableListOf(_viewModel.id)).await()
-                    Timber.d("Geofence removed")
-                } catch (e: Exception) {
-                    Timber.e(e)
+        if (isFineLocationGranted()) {
+            if (isBackgroundLocationPermissionGranted()) {
+                wrapEspressoIdlingResource {
+                    try {
+                        geofenceClient.removeGeofences(mutableListOf(_viewModel.id)).await()
+                        Timber.d("Geofence removed")
+                    } catch (e: Exception) {
+                        Timber.e(e)
+                    }
+                    _viewModel.removeReminder()
                 }
-                _viewModel.removeReminder()
+            } else {
+                requestLocationPermissionLauncherForRemoveGeofence.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
             }
         } else {
-            requestForegroundPermissionLauncherForRemoveGeofence.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+            requestLocationPermissionLauncherForRemoveGeofence.launch(Manifest.permission.ACCESS_FINE_LOCATION)
         }
     }
 

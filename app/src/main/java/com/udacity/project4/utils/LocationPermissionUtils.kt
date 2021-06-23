@@ -9,7 +9,7 @@ import com.udacity.project4.BuildConfig
 import com.udacity.project4.R
 
 fun Fragment.showPermissionsError() {
-    Snackbar.make(requireView(), R.string.location_required_error, Snackbar.LENGTH_INDEFINITE)
+    Snackbar.make(requireView(), R.string.permission_denied_explanation, Snackbar.LENGTH_INDEFINITE)
         .setAction(R.string.settings) {
             startActivity(Intent().apply {
                 action = Settings.ACTION_APPLICATION_DETAILS_SETTINGS
