@@ -1,12 +1,17 @@
 package com.udacity.project4.locationreminders.savereminder
 
+import android.Manifest
 import android.annotation.SuppressLint
 import android.app.PendingIntent
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.databinding.DataBindingUtil
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.navArgs
@@ -19,7 +24,9 @@ import com.udacity.project4.base.NavigationCommand
 import com.udacity.project4.databinding.FragmentSaveReminderBinding
 import com.udacity.project4.locationreminders.geofence.GeofenceBroadcastReceiver
 import com.udacity.project4.locationreminders.reminderslist.ReminderDataItem
-import com.udacity.project4.utils.*
+import com.udacity.project4.utils.setDisplayHomeAsUpEnabled
+import com.udacity.project4.utils.showPermissionsError
+import com.udacity.project4.utils.wrapEspressoIdlingResource
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import org.koin.android.ext.android.inject
@@ -68,7 +75,7 @@ class SaveReminderFragment : BaseFragment() {
                 NavigationCommand.To(SaveReminderFragmentDirections.actionSaveReminderFragmentToSelectLocationFragment())
         }
 
-        binding.saveReminder.setOnClickListener { saveReminder() }
+        binding.saveReminder.setOnClickListener { createGeofenceAndSaveReminder() }
         binding.deleteButton.setOnClickListener { lifecycleScope.launch { removeGeofenceAndReminder() } }
     }
 
@@ -78,7 +85,21 @@ class SaveReminderFragment : BaseFragment() {
         arguments?.clear()
     }
 
-    private fun saveReminder() {
+    private fun isBackgroundLocationPermissionGranted() =
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.Q || ContextCompat.checkSelfPermission(
+            requireContext(),
+            Manifest.permission.ACCESS_BACKGROUND_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+
+    private val requestForegroundPermissionLauncherForCreateGeofence = registerForActivityResult(ActivityResultContracts.RequestPermission()) { result ->
+        if (result) {
+            lifecycleScope.launch { createGeofenceAndSaveReminder() }
+        } else {
+            showPermissionsError()
+        }
+    }
+
+    private fun createGeofenceAndSaveReminder() {
         val title = _viewModel.reminderTitle.value
         val description = _viewModel.reminderDescription.value
         val location = _viewModel.reminderSelectedLocationStr.value
@@ -96,38 +117,54 @@ class SaveReminderFragment : BaseFragment() {
 
     @SuppressLint("MissingPermission")
     private suspend fun addGeofenceAndSaveReminder(reminder: ReminderDataItem) {
-        val geofence = Geofence.Builder()
-            .setRequestId(reminder.id)
-            .setCircularRegion(reminder.latitude ?: return, reminder.longitude ?: return, reminder.radius ?: return)
-            .setExpirationDuration(Geofence.NEVER_EXPIRE)
-            .setTransitionTypes(Geofence.GEOFENCE_TRANSITION_ENTER)
-            .build()
-        val request = GeofencingRequest.Builder()
-            .setInitialTrigger(GeofencingRequest.INITIAL_TRIGGER_ENTER)
-            .addGeofence(geofence)
-            .build()
-        wrapEspressoIdlingResource {
-            try {
-                geofenceClient.addGeofences(request, geofencePendingIntent).await()
-            } catch (e: Exception) {
-                Timber.e(e)
-                _viewModel.showSnackBarInt.postValue(R.string.error_adding_geofence)
-                return
-            }
+        if (isBackgroundLocationPermissionGranted()) {
+            val geofence = Geofence.Builder()
+                .setRequestId(reminder.id)
+                .setCircularRegion(reminder.latitude ?: return, reminder.longitude ?: return, reminder.radius ?: return)
+                .setExpirationDuration(Geofence.NEVER_EXPIRE)
+                .setTransitionTypes(Geofence.GEOFENCE_TRANSITION_ENTER)
+                .build()
+            val request = GeofencingRequest.Builder()
+                .setInitialTrigger(GeofencingRequest.INITIAL_TRIGGER_ENTER)
+                .addGeofence(geofence)
+                .build()
+            wrapEspressoIdlingResource {
+                try {
+                    geofenceClient.addGeofences(request, geofencePendingIntent).await()
+                } catch (e: Exception) {
+                    Timber.e(e)
+                    _viewModel.showSnackBarInt.postValue(R.string.error_adding_geofence)
+                    return
+                }
 
-            _viewModel.saveReminder(reminder)
+                _viewModel.saveReminder(reminder)
+            }
+        } else {
+            requestForegroundPermissionLauncherForCreateGeofence.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+        }
+    }
+
+    private val requestForegroundPermissionLauncherForRemoveGeofence = registerForActivityResult(ActivityResultContracts.RequestPermission()) { result ->
+        if (result) {
+            lifecycleScope.launch { removeGeofenceAndReminder() }
+        } else {
+            showPermissionsError()
         }
     }
 
     private suspend fun removeGeofenceAndReminder() {
-        wrapEspressoIdlingResource {
-            try {
-                geofenceClient.removeGeofences(mutableListOf(_viewModel.id)).await()
-                Timber.d("Geofence removed")
-            } catch (e: Exception) {
-                Timber.e(e)
+        if (isBackgroundLocationPermissionGranted()) {
+            wrapEspressoIdlingResource {
+                try {
+                    geofenceClient.removeGeofences(mutableListOf(_viewModel.id)).await()
+                    Timber.d("Geofence removed")
+                } catch (e: Exception) {
+                    Timber.e(e)
+                }
+                _viewModel.removeReminder()
             }
-            _viewModel.removeReminder()
+        } else {
+            requestForegroundPermissionLauncherForRemoveGeofence.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
         }
     }
 

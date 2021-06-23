@@ -14,13 +14,17 @@ abstract class BaseFragment : Fragment() {
      */
     abstract val _viewModel: BaseViewModel
 
+    private var lastToast: Toast? = null
+
     override fun onStart() {
         super.onStart()
         _viewModel.showErrorMessage.observe(this, {
-            Toast.makeText(activity, it, Toast.LENGTH_LONG).show()
+            lastToast?.cancel()
+            lastToast = Toast.makeText(activity, it, Toast.LENGTH_LONG).apply { show() }
         })
         _viewModel.showToast.observe(this, {
-            Toast.makeText(activity, it, Toast.LENGTH_LONG).show()
+            lastToast?.cancel()
+            lastToast = Toast.makeText(activity, it, Toast.LENGTH_LONG).apply { show() }
         })
         _viewModel.showSnackBar.observe(this, {
             Snackbar.make(this.requireView(), it, Snackbar.LENGTH_LONG).show()

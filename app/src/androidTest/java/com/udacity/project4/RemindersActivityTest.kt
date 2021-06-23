@@ -3,6 +3,7 @@ package com.udacity.project4
 import android.app.Application
 import android.view.InputDevice
 import android.view.MotionEvent
+import android.view.View
 import androidx.recyclerview.widget.RecyclerView
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider.getApplicationContext
@@ -15,9 +16,11 @@ import androidx.test.espresso.action.Tap
 import androidx.test.espresso.action.ViewActions.*
 import androidx.test.espresso.assertion.ViewAssertions.matches
 import androidx.test.espresso.contrib.RecyclerViewActions
+import androidx.test.espresso.matcher.RootMatchers.withDecorView
 import androidx.test.espresso.matcher.ViewMatchers.*
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.LargeTest
+import androidx.viewpager.widget.ViewPager
 import com.udacity.project4.locationreminders.RemindersActivity
 import com.udacity.project4.locationreminders.data.ReminderDataSource
 import com.udacity.project4.locationreminders.data.local.LocalDB
@@ -25,6 +28,7 @@ import com.udacity.project4.locationreminders.data.local.RemindersLocalRepositor
 import com.udacity.project4.locationreminders.reminderslist.RemindersListViewModel
 import com.udacity.project4.locationreminders.savereminder.SaveReminderViewModel
 import com.udacity.project4.util.DataBindingIdlingResource
+import com.udacity.project4.util.ToastMatcher
 import com.udacity.project4.util.monitorActivity
 import com.udacity.project4.utils.EspressoIdlingResource
 import kotlinx.coroutines.runBlocking
@@ -115,7 +119,7 @@ class RemindersActivityTest :
         // try to save
         onView(withId(R.id.saveReminder)).perform(click())
         // check snackbar
-        onView(withId(com.google.android.material.R.id.snackbar_text)) .check(matches(withText(R.string.err_enter_title)))
+        onView(withId(com.google.android.material.R.id.snackbar_text)).check(matches(withText(R.string.err_enter_title)))
 
         // enter title, description
         onView(withId(R.id.reminderTitle)).perform(typeText("Reminder Title"))
@@ -134,13 +138,15 @@ class RemindersActivityTest :
         }, Press.FINGER, InputDevice.SOURCE_MOUSE, MotionEvent.BUTTON_PRIMARY))
 
         // enter description, confirm
-        onView(withId(R.id.description_text_edit)).perform(clearText())
+        onView(withId(R.id.description_text_edit)).perform(click(), clearText())
         onView(withId(R.id.description_text_edit)).perform(typeText("Place description"))
         Espresso.closeSoftKeyboard()
         onView(withId(R.id.select_reminder_button)).perform(click())
 
         // save
         onView(withId(R.id.saveReminder)).perform(click())
+        // toast
+        onView(withText(R.string.reminder_saved)).inRoot(ToastMatcher().apply { matches(isDisplayed()) })
 
         // check recyclerview
         onView(withId(R.id.reminderssRecyclerView)).check(matches(hasDescendant(withText("Reminder Title"))))
@@ -152,6 +158,8 @@ class RemindersActivityTest :
 
         // click on delete
         onView(withId(R.id.delete_button)).perform(click())
+        // toast again
+        onView(withText(R.string.reminder_deleted)).inRoot(ToastMatcher().apply { matches(isDisplayed()) })
 
         // check if list is empty
         onView(withId(R.id.noDataTextView)).check(matches(isDisplayed()))

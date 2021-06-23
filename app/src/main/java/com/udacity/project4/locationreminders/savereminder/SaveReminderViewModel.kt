@@ -14,6 +14,7 @@ import com.udacity.project4.locationreminders.data.ReminderDataSource
 import com.udacity.project4.locationreminders.data.dto.ReminderDTO
 import com.udacity.project4.locationreminders.data.dto.Result
 import com.udacity.project4.locationreminders.reminderslist.ReminderDataItem
+import com.udacity.project4.utils.EspressoIdlingResource
 import kotlinx.coroutines.launch
 import java.util.*
 
@@ -79,6 +80,7 @@ class SaveReminderViewModel(val app: Application, private val dataSource: Remind
         setLatLonSelection(it.latLng)
         selectedPOI = pointOfInterest
         selectedDescription.value = it.name
+        EspressoIdlingResource.decrement()
     }
 
     @SuppressLint("NullSafeMutableLiveData")

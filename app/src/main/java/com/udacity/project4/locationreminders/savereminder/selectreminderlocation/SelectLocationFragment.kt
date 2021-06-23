@@ -107,6 +107,7 @@ class SelectLocationFragment : BaseFragment(), OnMapReadyCallback {
         }
 
         map.setOnPoiClickListener {
+            EspressoIdlingResource.increment()
             _viewModel.selectPOI(it)
         }
         lifecycleScope.launch {
@@ -151,49 +152,12 @@ class SelectLocationFragment : BaseFragment(), OnMapReadyCallback {
             .fillColor(ContextCompat.getColor(requireContext(), R.color.colorCircleFill))
     )
 
-    private fun showPermissionsError() {
-        Snackbar.make(requireView(), R.string.location_required_error, Snackbar.LENGTH_INDEFINITE)
-            .setAction(R.string.settings) {
-                startActivity(Intent().apply {
-                    action = Settings.ACTION_APPLICATION_DETAILS_SETTINGS
-                    data = Uri.fromParts("package", BuildConfig.APPLICATION_ID, null)
-                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                })
-            }.show()
-    }
-
     private fun zoomMapTo(coord: LatLng) = map.moveCamera(CameraUpdateFactory.newLatLngZoom(coord, 15f))
 
     private fun isFineLocationGranted() =
         ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
 
-    private fun isBackgroundLocationGranted() =
-        Build.VERSION.SDK_INT < Build.VERSION_CODES.Q || ContextCompat.checkSelfPermission(
-            requireContext(),
-            Manifest.permission.ACCESS_BACKGROUND_LOCATION
-        ) == PackageManager.PERMISSION_GRANTED
-
-    private fun isLocationPermissionsGranted() = isFineLocationGranted() && isBackgroundLocationGranted()
-
-    // Asking permissions one by one because of this:
-    // ...
-    // If your app targets Android 11 (API level 30) or higher, the system enforces this best practice.
-    // If you request a foreground location permission and the background location permission at the same time,
-    // the system ignores the request and doesn't grant your app either permission.
-
     private val requestForegroundPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { result ->
-        if (result) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                requestBackgroundPermissionLauncher.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
-            } else {
-                lifecycleScope.launch { showDefaultLocation() }
-            }
-        } else {
-            showPermissionsError()
-        }
-    }
-
-    private val requestBackgroundPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { result ->
         if (result) {
             lifecycleScope.launch { showDefaultLocation() }
         } else {
@@ -203,7 +167,7 @@ class SelectLocationFragment : BaseFragment(), OnMapReadyCallback {
 
     @SuppressLint("MissingPermission")
     private suspend fun showDefaultLocation() {
-        if (isLocationPermissionsGranted()) {
+        if (isFineLocationGranted()) {
             map.isMyLocationEnabled = true
             map.uiSettings.isMyLocationButtonEnabled = true
             try {
